@@ -1,6 +1,7 @@
 local restful = require("restful")
 local credis = require("credis")
 local cmysql = require("cmysql")
+local cjson = require("cjson.safe")
 local random = require("resty.random")
 local str = require("resty.string")
 local srp = require("srp")
@@ -11,16 +12,16 @@ local _M = {}
 local function set_srp_tmp(key, value)
 end
 
-local function get_srp_persist(key)
-end
-
 local function get_srp_tmp(key)
 end
 
-local function set_srp_persist(key, value)
+local function get_srp_persist(key)
 end
 
 local function del_srp_tmp(key)
+end
+
+local function set_srp_persist(key, value)
 end
 
 local function get_arg_phone()
@@ -60,7 +61,7 @@ local function get_password(phone)
     -- 增加验证码发送次数
 
     -- 发送短信
-    return restful:wrap({password = password, s = s, N_num_bits = N_num_bits})
+    return restful:wrap({password = password, s = s})
 end
 
 local function get_B(phone)
