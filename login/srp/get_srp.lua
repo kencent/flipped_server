@@ -15,13 +15,13 @@ local STATUS_PASSWORD_ALREADY_SEND = 2
 
 local redis_conf = {
     host = "127.0.0.1",
-    password = "1234"
+    password = "flipped@redis"
 }
 
 local mysql_conf = {
     host = "127.0.0.1",
-    user = "root",
-    password = "1234"
+    user = "flipped",
+    password = "flipped_admin"
 }
 
 local redis = credis:new(redis_conf)
@@ -250,7 +250,7 @@ function _M:run()
 
 
 
-    local srp_arg = ngx.var[2]
+    local srp_arg = ngx.var[1]
     if not srp_arg then
         return restful:method_not_allowed()
     end
