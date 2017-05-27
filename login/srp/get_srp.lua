@@ -4,7 +4,9 @@ local cmysql = require("cmysql")
 local cjson = require("cjson.safe")
 local random = require("resty.random")
 local str = require("resty.string")
+local http = require("resty.http")
 local utils = require("resty.utils")
+local resty_sha256 = require("resty.sha256")
 local srp = require("srp")
 local quote_sql_str = ngx.quote_sql_str
 
@@ -29,9 +31,6 @@ local mysql_conf = {
 
 local redis = credis:new(redis_conf)
 local mysql = cmysql:new(mysql_conf)
---local SRP_KEY_PREFIX = "SRPKEY"
---local SMS_FREQ_PREFIX = "SMSFREQ"
---local SRP_FREQ_PREFIX = "SRPFREQ"
 
 local function get_srp_tmp_key(I)
     return "SRPTMP" .. I
@@ -103,6 +102,48 @@ local function get_arg_phone()
     return phone
 end
 
+local function send_password(phone, password)
+    local appid = "1400031910"
+    local appkey = "3774316461786106739a79d6632f96da"
+    local now = math.floor(ngx.now() * 1000)
+    math.randomseed(now)
+    local rd = math.random(1000000000, 9999999999)
+    local time = math.floor(now / 1000)
+
+    local sha256 = resty_sha256:new()
+    sha256:update("appkey=" ..  appkey .. "&random=" .. rd .. "&time=" .. time .. "&mobile=" .. phone)
+    local sig = sha256:final()
+    sig = str.to_hex(sig)
+
+    local httpc = http:new()
+    httpc:set_timeout(10)
+    local res, err = httpc:request_uri("https://yun.tim.qq.com/v5/tlssmssvr/sendsms?" 
+        .. ngx.encode_args({sdkappid = appid, random = rd}), {
+            tel = {
+                nationcode = "86",
+                mobile = tostring(phone),
+            },
+            type = 0,
+            msg = "【小情绪】您是登录验证码是" .. password .. "," .. math.floor(validtime / 60) .. "内有效",
+            sig = sig,
+            time = time,
+        })
+    
+    if res then
+        res = cjson.decode(res)
+        if res and res.result ~= 0 then
+            err = res.errmsg
+        end
+    end
+
+    if err then
+        ngx.log(ngx.ERR, "failed to send password,phone=", phone)
+        return err
+    end
+
+    return nil
+end
+
 local function get_password(phone)
     local now = ngx.time()
 
@@ -153,7 +194,12 @@ local function get_password(phone)
         return restful:internal_server_error("获取验证码失败")
     end
 
-    -- TODO: 使用短信发送password
+    -- 发送验证码
+    err = send_password(phone, password)
+    if err then
+        del_srp_tmp(phone)
+        return restful:internal_server_error("获取验证码失败")
+    end
 
     -- 增加发送验证码次数
     if send_times == 0 then
