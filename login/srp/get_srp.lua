@@ -1,6 +1,6 @@
-local restful = require("restful")
-local credis = require("credis")
-local cmysql = require("cmysql")
+local restful = require("resty.restful")
+local credis = require("resty.credis")
+local cmysql = require("resty.cmysql")
 local cjson = require("cjson.safe")
 local random = require("resty.random")
 local str = require("resty.string")
@@ -9,8 +9,6 @@ local utils = require("resty.utils")
 local resty_sha256 = require("resty.sha256")
 local srp = require("srp")
 local quote_sql_str = ngx.quote_sql_str
-
-local _M = {}
 
 local N_num_bits = "2048"
 local countdown = 60
@@ -25,7 +23,7 @@ local redis_conf = {
 
 local mysql_conf = {
     host = "127.0.0.1",
-    user = "flipped",
+    user = "root",
     password = "flipped_admin"
 }
 
@@ -37,7 +35,8 @@ local function get_srp_tmp_key(I)
 end
 
 local function set_srp_tmp(I, value, expire)
-    local _, err = redis:do_cmd("setex", get_srp_tmp_key(I), cjson.encode(value), expire)
+    local res, err = redis:do_cmd("setex", get_srp_tmp_key(I), expire, cjson.encode(value))
+    ngx.log(ngx.DEBUG, "res=", cjson.encode(res), ",err=", err)
     return err
 end
 
@@ -114,30 +113,40 @@ local function send_password(phone, password)
     sha256:update("appkey=" ..  appkey .. "&random=" .. rd .. "&time=" .. time .. "&mobile=" .. phone)
     local sig = sha256:final()
     sig = str.to_hex(sig)
+    ngx.log(ngx.DEBUG, "phone=", phone, ",sig=", sig)
 
     local httpc = http:new()
-    httpc:set_timeout(10)
+    httpc:set_timeout(10000)
     local res, err = httpc:request_uri("https://yun.tim.qq.com/v5/tlssmssvr/sendsms?" 
         .. ngx.encode_args({sdkappid = appid, random = rd}), {
-            tel = {
-                nationcode = "86",
-                mobile = tostring(phone),
-            },
-            type = 0,
-            msg = "【小情绪】您是登录验证码是" .. password .. "," .. math.floor(validtime / 60) .. "内有效",
-            sig = sig,
-            time = time,
+            body = cjson.encode({
+                tel = {
+                    nationcode = "86",
+                    mobile = tostring(phone),
+                },
+                type = 0,
+                msg = "小情绪，您登录验证码是" .. password .. "," .. math.floor(validtime / 60) .. "内有效",
+                sig = sig,
+                time = time
+            }),
+            method = "POST",
+            ssl_verify = false,
         })
-    
+
     if res then
-        res = cjson.decode(res)
-        if res and res.result ~= 0 then
-            err = res.errmsg
+        if res.status >= 400 then
+            err = "status " .. res.status
+        else
+            ngx.log(ngx.DEBUG, "send_password body=", res.body)
+            local body = cjson.decode(res.body or "")
+            if body and body.result ~= 0 then
+                err = body.result .. " " .. body.errmsg
+            end
         end
     end
 
     if err then
-        ngx.log(ngx.ERR, "failed to send password,phone=", phone)
+        ngx.log(ngx.ERR, "failed to send password,phone=", phone, ",err=", err)
         return err
     end
 
@@ -203,7 +212,7 @@ local function get_password(phone)
 
     -- 增加发送验证码次数
     if send_times == 0 then
-        _, err = redis:do_cmd("setex", sms_freq_key, 1, 3600)
+        _, err = redis:do_cmd("setex", sms_freq_key, 3600, 1)
     else
         _, err = redis:do_cmd("incr", sms_freq_key)
     end
@@ -303,7 +312,7 @@ local function get_M2(phone)
         end
 
         if wrong_times == 0 then
-            _, err = redis:do_cmd("setex", wrong_password_key, 1, validtime)
+            _, err = redis:do_cmd("setex", wrong_password_key, validtime, 1)
         else
             _, err = redis:do_cmd("incr", wrong_password_key)
         end
@@ -324,7 +333,7 @@ local function get_M2(phone)
     return {M2 = server_M2}
 end
 
-function _M:run()
+local function run()
     local phone = get_arg_phone()
     if not phone then
         return restful:unprocessable_entity("手机号不合法")
@@ -346,7 +355,13 @@ function _M:run()
     return restful:method_not_allowed()
 end
 
-return _M
+local res = run()
+ngx.status = res.status
+local body = cjson.encode(res.body)
+ngx.header["Content-Type"] = "application/json; charset=utf-8"
+ngx.header["Content-Length"] = #body + 1
+ngx.say(body)
+
 
 
 
