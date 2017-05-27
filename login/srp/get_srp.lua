@@ -87,8 +87,8 @@ local function set_srp_persist(I, value)
     return err
 end
 
-local function get_arg_phone()
-    local phone = ngx.var.arg_phone
+local function get_phone()
+    local phone = ngx.var.http_x_uid
     if not phone then
         return nil
     end
@@ -334,7 +334,7 @@ local function get_M2(phone)
 end
 
 local function run()
-    local phone = get_arg_phone()
+    local phone = get_phone()
     if not phone then
         return restful:unprocessable_entity("手机号不合法")
     end
