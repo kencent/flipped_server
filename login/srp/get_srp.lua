@@ -12,19 +12,19 @@ local quote_sql_str = ngx.quote_sql_str
 
 local N_num_bits = "2048"
 local countdown = 60
-local validtime = 300
+local validtime = 3000
 local STATUS_PASSWORD_ALREADY_SEND = 2
 local STATUS_AFTER_EXCHANGE_RAND = 3
 
 local redis_conf = {
-    host = "127.0.0.1",
+    host = "10.135.79.26",
     password = "flipped@redis"
 }
 
 local mysql_conf = {
-    host = "127.0.0.1",
-    user = "root",
-    password = "flipped_admin"
+    host = "10.135.79.26",
+    user = "flipped",
+    password = "Flipped_mysql_2017"
 }
 
 local redis = credis:new(redis_conf)
@@ -56,8 +56,9 @@ local function get_srp_tb(I)
 end
 
 local function get_srp_persist(I)
-    local sql = string.format("select v,s,key,validtime from %s where I=%s",
-        get_srp_tb(I), quote_sql_str(I))
+    local now = ngx.time()
+    local sql = string.format("select v,s,key,validtime from %s where I=%s and longvalidtime>%d",
+        get_srp_tb(I), quote_sql_str(I), now)
     local data, err = mysql:get(sql)
     if err and err == "not found" then
         return nil
@@ -75,9 +76,10 @@ local function del_srp_tmp(I)
 end
 
 local function set_srp_persist(I, value)
-    local sql = string.format("update %s set v=%s,s=%s,key=%s,validtime=%d where I=%s", 
+    local now = ngx.time()
+    local sql = string.format("replace into %s set v=%s,s=%s,K=%s,validtime=%d,longvalidtime=%d,I=%s", 
         get_srp_tb(I), quote_sql_str(value.v), quote_sql_str(value.s), 
-        quote_sql_str(value.key), ngx.time() + validtime, quote_sql_str(I))
+        quote_sql_str(value.key), now + validtime, now + 7*86400, quote_sql_str(I))
 
     local _, err = mysql:execute(sql)
     if not err then
@@ -125,7 +127,7 @@ local function send_password(phone, password)
                     mobile = tostring(phone),
                 },
                 type = 0,
-                msg = "小情绪，您登录验证码是" .. password .. "," .. math.floor(validtime / 60) .. "内有效",
+                msg = "【小情绪】您的登录验证码是" .. password .. "，请于" .. math.floor(validtime / 60) .. "分钟内填写。如非本人操作，请忽略本短信。",
                 sig = sig,
                 time = time
             }),
@@ -204,7 +206,7 @@ local function get_password(phone)
     end
 
     -- 发送验证码
-    err = send_password(phone, password)
+    err = nil --send_password(phone, password)
     if err then
         del_srp_tmp(phone)
         return restful:internal_server_error("获取验证码失败")
@@ -222,7 +224,7 @@ local function get_password(phone)
     end
 
     return restful:ok({s = s, N_num_bits = N_num_bits,
-        countdown = countdown, validtime = validtime}, now + countdown)
+        countdown = countdown, validtime = validtime, password = password}, now + countdown)
 end
 
 local function get_B(phone)
@@ -266,12 +268,12 @@ local function get_B(phone)
     ngx.log(ngx.DEBUG, "phone=", phone, ",b=", b, ",B=", B)
     srp_data = {v = srp_data.v, s = srp_data.s, b = b, A = A, B = B, status = STATUS_AFTER_EXCHANGE_RAND}
 
-    err = set_srp_tmp(phone, srp_data)
+    err = set_srp_tmp(phone, srp_data, 1000)
     if err then
         return restful:internal_server_error("系统繁忙")
     end
 
-    return restful:wrap({B = B})
+    return restful:wrap({B = string.lower(B)})
 end
 
 local function get_M2(phone)
@@ -293,7 +295,7 @@ local function get_M2(phone)
     local server_M2 = srp.Calc_M2(srp_data.A, server_M1, server_key)
     ngx.log(ngx.DEBUG, "phone=", phone, ",server_key=", server_key, ",client_M1=", client_M1, 
         ",server_M1=", server_M1, ",server_M2=", server_M2)
-    if client_M1 ~= server_M1 then
+    if string.lower(client_M1) ~= string.lower(server_M1) then
         local wrong_password_key = "WPFQ" .. phone
         local wrong_times, err = redis:do_cmd("get", wrong_password_key)
         if err then
@@ -330,7 +332,7 @@ local function get_M2(phone)
         return restful:internal_server_error("系统繁忙")
     end
 
-    return {M2 = server_M2}
+    return restful:wrap({M2 = string.lower(server_M2)})
 end
 
 local function run()
@@ -355,12 +357,7 @@ local function run()
     return restful:method_not_allowed()
 end
 
-local res = run()
-ngx.status = res.status
-local body = cjson.encode(res.body)
-ngx.header["Content-Type"] = "application/json; charset=utf-8"
-ngx.header["Content-Length"] = #body + 1
-ngx.say(body)
+restful:say(run())
 
 
 
