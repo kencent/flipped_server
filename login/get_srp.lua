@@ -1,93 +1,23 @@
 local restful = require("resty.restful")
 local credis = require("resty.credis")
-local cmysql = require("resty.cmysql")
 local cjson = require("cjson.safe")
 local random = require("resty.random")
 local str = require("resty.string")
 local http = require("resty.http")
-local utils = require("resty.utils")
 local resty_sha256 = require("resty.sha256")
 local srp = require("srp")
-local quote_sql_str = ngx.quote_sql_str
-
-local N_num_bits = "2048"
-local countdown = 60
-local validtime = 3000
-local STATUS_PASSWORD_ALREADY_SEND = 2
-local STATUS_AFTER_EXCHANGE_RAND = 3
+local srp_store = require("srp_store")
 
 local redis_conf = {
     host = "10.135.79.26",
     password = "flipped@redis"
 }
 
-local mysql_conf = {
-    host = "10.135.79.26",
-    user = "flipped",
-    password = "Flipped_mysql_2017"
-}
-
 local redis = credis:new(redis_conf)
-local mysql = cmysql:new(mysql_conf)
-
-local function get_srp_tmp_key(I)
-    return "SRPTMP" .. I
-end
-
-local function set_srp_tmp(I, value, expire)
-    local res, err = redis:do_cmd("setex", get_srp_tmp_key(I), expire, cjson.encode(value))
-    ngx.log(ngx.DEBUG, "res=", cjson.encode(res), ",err=", err)
-    return err
-end
-
-local function get_srp_tmp(I)
-    local data, err = redis:do_cmd("get", get_srp_tmp_key(I))
-    if err then
-        return nil, err
-    end
-
-    return type(data) == "string" and cjson.decode(data) or nil
-end
-
-local function get_srp_tb(I)
-    local hash = utils:hash(I) % 1000
-    local db, tb = math.floor(hash / 100), hash % 100
-    return string.format("dbLogin_%d.SRP_%d", db, tb)
-end
-
-local function get_srp_persist(I)
-    local now = ngx.time()
-    local sql = string.format("select v,s,key,validtime from %s where I=%s and longvalidtime>%d",
-        get_srp_tb(I), quote_sql_str(I), now)
-    local data, err = mysql:get(sql)
-    if err and err == "not found" then
-        return nil
-    end
-
-    if err then
-        return nil, err
-    end
-
-    return data
-end
-
-local function del_srp_tmp(I)
-    return redis:do_cmd("del", get_srp_tmp_key(I))
-end
-
-local function set_srp_persist(I, value)
-    local now = ngx.time()
-    local sql = string.format("replace into %s set v=%s,s=%s,K=%s,validtime=%d,longvalidtime=%d,I=%s", 
-        get_srp_tb(I), quote_sql_str(value.v), quote_sql_str(value.s), 
-        quote_sql_str(value.key), now + validtime, now + 7*86400, quote_sql_str(I))
-
-    local _, err = mysql:execute(sql)
-    if not err then
-        del_srp_tmp(I)
-    end
-
-    return err
-end
+local countdown = 60
+local password_validtime = 3000
+local STATUS_PASSWORD_ALREADY_SEND = 2
+local STATUS_AFTER_EXCHANGE_RAND = 3
 
 local function get_phone()
     local phone = ngx.var.http_x_uid
@@ -127,7 +57,7 @@ local function send_password(phone, password)
                     mobile = tostring(phone),
                 },
                 type = 0,
-                msg = "【小情绪】您的登录验证码是" .. password .. "，请于" .. math.floor(validtime / 60) .. "分钟内填写。如非本人操作，请忽略本短信。",
+                msg = "【小情绪】您的登录验证码是" .. password .. "，请于" .. math.floor(password_validtime / 60) .. "分钟内填写。如非本人操作，请忽略本短信。",
                 sig = sig,
                 time = time
             }),
@@ -163,7 +93,7 @@ local function get_password(phone)
         return restful:not_modified()
     end
 
-    local srp_data, err = get_srp_tmp(phone)
+    local srp_data, err = srp_store:get_srp_tmp(phone)
     if err then
         ngx.log(ngx.ERR, "failed to get srp tmp data,phone=", phone, ",err=", err)
         return restful:internal_server_error("获取验证码失败")
@@ -172,9 +102,9 @@ local function get_password(phone)
     -- 一分钟内发送过了
     if type(srp_data) == "table" and type(srp_data.last_send_time) == "number"
         and srp_data.last_send_time + countdown > now then
-        return {s = srp_data.s, N_num_bits = N_num_bits, 
+        return {s = srp_data.s, N_num_bits = srp_store.N_num_bits, 
             countdown = srp_data.last_send_time + countdown - now,
-            validtime = srp_data.last_send_time + validtime - now}
+            validtime = srp_data.last_send_time + password_validtime - now}
     end
 
     -- 获取验证码次数超过频率限制
@@ -186,7 +116,7 @@ local function get_password(phone)
     end
 
     send_times = tonumber(send_times) or 0
-    if send_times >= 3 then
+    if send_times >= 3000 then
         return restful:too_many_requests("获取验证码次数过多，请稍后重试")
     end
 
@@ -196,19 +126,19 @@ local function get_password(phone)
     password = string.format("%06d", password)
     ngx.log(ngx.DEBUG, "phone=", phone, ",s=", s, ",password=", password)
 
-    local g, N = srp.get_default_gN(N_num_bits)
+    local g, N = srp.get_default_gN(srp_store.N_num_bits)
     local v = srp.create_verifier(phone, password, s, N, g)
 
     -- 写srp临时存储
-    err = set_srp_tmp(phone, {last_send_time = now, s = s, v = v, status = STATUS_PASSWORD_ALREADY_SEND}, validtime)
+    err = srp_store:set_srp_tmp(phone, {last_send_time = now, s = s, v = v, status = STATUS_PASSWORD_ALREADY_SEND}, password_validtime)
     if err then
         return restful:internal_server_error("获取验证码失败")
     end
 
     -- 发送验证码
-    err = nil --send_password(phone, password)
+    err = send_password(phone, password)
     if err then
-        del_srp_tmp(phone)
+        srp_store:del_srp_tmp(phone)
         return restful:internal_server_error("获取验证码失败")
     end
 
@@ -223,8 +153,8 @@ local function get_password(phone)
         ngx.log(ngx.ERR, "failed to set sms freq,phone=", phone, ",err=", err)
     end
 
-    return restful:ok({s = s, N_num_bits = N_num_bits,
-        countdown = countdown, validtime = validtime, password = password}, now + countdown)
+    return restful:ok({s = s, N_num_bits = srp_store.N_num_bits,
+        countdown = countdown, validtime = srp_store.validtime}, now + countdown)
 end
 
 local function get_B(phone)
@@ -233,13 +163,13 @@ local function get_B(phone)
         return restful:unprocessable_entity("参数非法")
     end
 
-    local g, N = srp.get_default_gN(N_num_bits)
+    local g, N = srp.get_default_gN(srp_store.N_num_bits)
     if srp.Verify_mod_N(A, N) == 0 then
         return restful:unprocessable_entity()
     end
 
     local now = ngx.time()
-    local srp_data, err = get_srp_tmp(phone)
+    local srp_data, err = srp_store:get_srp_tmp(phone)
     if err then
         return restful:internal_server_error("系统繁忙")
     end
@@ -252,7 +182,7 @@ local function get_B(phone)
         end
     -- 前置状态是key已过期，则要求持久srp存储存在，且key已过期
     else
-        srp_data, err = get_srp_persist(phone)
+        srp_data, err = srp_store:get_srp_persist(phone)
         if err then
             return restful:internal_server_error("系统繁忙")
         end
@@ -268,7 +198,7 @@ local function get_B(phone)
     ngx.log(ngx.DEBUG, "phone=", phone, ",b=", b, ",B=", B)
     srp_data = {v = srp_data.v, s = srp_data.s, b = b, A = A, B = B, status = STATUS_AFTER_EXCHANGE_RAND}
 
-    err = set_srp_tmp(phone, srp_data, 1000)
+    err = srp_store:set_srp_tmp(phone, srp_data, 1000)
     if err then
         return restful:internal_server_error("系统繁忙")
     end
@@ -282,14 +212,14 @@ local function get_M2(phone)
         return restful:unprocessable_entity("参数非法")
     end
 
-    local srp_data = get_srp_tmp(phone)
+    local srp_data = srp_store:get_srp_tmp(phone)
     if not srp_data or not srp_data.A or not srp_data.B or not srp_data.b
         or not srp_data.v or not srp_data.s 
         or not srp_data.status or not srp_data.status == STATUS_AFTER_EXCHANGE_RAND then
         return restful:forbidden("非法请求")
     end
 
-    local g, N = srp.get_default_gN(N_num_bits)
+    local g, N = srp.get_default_gN(srp_store.N_num_bits)
     local server_key = srp.Calc_server_key(srp_data.A, srp_data.B, N, srp_data.v, srp_data.b);
     local server_M1 = srp.Calc_M1(N, g, phone, srp_data.s, srp_data.A, srp_data.B, server_key);
     local server_M2 = srp.Calc_M2(srp_data.A, server_M1, server_key)
@@ -306,7 +236,7 @@ local function get_M2(phone)
         -- 验证码错误次数达到3次， 验证码失效，需删除srp tmp存储
         local max_wrong_times = 3
         if wrong_times + 1 >= max_wrong_times then
-            if not del_srp_tmp(phone) then
+            if not srp_store:del_srp_tmp(phone) then
                 redis:do_cmd("del", wrong_password_key)
             end
 
@@ -314,7 +244,7 @@ local function get_M2(phone)
         end
 
         if wrong_times == 0 then
-            _, err = redis:do_cmd("setex", wrong_password_key, validtime, 1)
+            _, err = redis:do_cmd("setex", wrong_password_key, srp_store.validtime, 1)
         else
             _, err = redis:do_cmd("incr", wrong_password_key)
         end
@@ -326,8 +256,8 @@ local function get_M2(phone)
         return restful:unprocessable_entity("验证码错误，还有" .. max_wrong_times - wrong_times - 1 .. "次机会")
     end
 
-    srp_data = {key = server_key, v = srp_data.v, s = srp_data.s}
-    local err = set_srp_persist(phone, srp_data)
+    srp_data = {K = server_key, v = srp_data.v, s = srp_data.s}
+    local err = srp_store:set_srp_persist(phone, srp_data)
     if err then
         return restful:internal_server_error("系统繁忙")
     end
