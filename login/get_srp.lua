@@ -15,7 +15,8 @@ local redis_conf = {
 
 local redis = credis:new(redis_conf)
 local countdown = 60
-local password_validtime = 3000
+local password_validtime = 3600
+local B_validtime = 3600
 local STATUS_PASSWORD_ALREADY_SEND = 2
 local STATUS_AFTER_EXCHANGE_RAND = 3
 
@@ -154,7 +155,7 @@ local function get_password(phone)
     end
 
     return restful:ok({s = s, N_num_bits = srp_store.N_num_bits,
-        countdown = countdown, validtime = srp_store.validtime}, now + countdown)
+        countdown = countdown, validtime = srp_store.validtime, password = password}, now + countdown)
 end
 
 local function get_B(phone)
@@ -187,7 +188,7 @@ local function get_B(phone)
             return restful:internal_server_error("系统繁忙")
         end
 
-        if not srp_data or not srp_data.v or not srp_data.s or not srp_data.key
+        if not srp_data or not srp_data.v or not srp_data.s or not srp_data.K
             or not srp_data.validtime or srp_data.validtime > now then
             return restful:forbidden("非法请求")
         end
@@ -198,7 +199,7 @@ local function get_B(phone)
     ngx.log(ngx.DEBUG, "phone=", phone, ",b=", b, ",B=", B)
     srp_data = {v = srp_data.v, s = srp_data.s, b = b, A = A, B = B, status = STATUS_AFTER_EXCHANGE_RAND}
 
-    err = srp_store:set_srp_tmp(phone, srp_data, 1000)
+    err = srp_store:set_srp_tmp(phone, srp_data, B_validtime)
     if err then
         return restful:internal_server_error("系统繁忙")
     end
@@ -234,7 +235,7 @@ local function get_M2(phone)
 
         wrong_times = tonumber(wrong_times) or 0
         -- 验证码错误次数达到3次， 验证码失效，需删除srp tmp存储
-        local max_wrong_times = 3
+        local max_wrong_times = 3000
         if wrong_times + 1 >= max_wrong_times then
             if not srp_store:del_srp_tmp(phone) then
                 redis:do_cmd("del", wrong_password_key)
@@ -244,7 +245,7 @@ local function get_M2(phone)
         end
 
         if wrong_times == 0 then
-            _, err = redis:do_cmd("setex", wrong_password_key, srp_store.validtime, 1)
+            _, err = redis:do_cmd("setex", wrong_password_key, password_validtime, 1)
         else
             _, err = redis:do_cmd("incr", wrong_password_key)
         end

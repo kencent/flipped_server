@@ -11,34 +11,42 @@ local function unauthorized()
 end
 
 local function run()
-    local authentication = ngx.var.http_authentication
-    local phone = ngx.var.http_x_uid
-    if not authentication or not phone then
+    local uid = ngx.var.http_x_uid
+    local authorization = ngx.var.http_authorization
+    if not uid or not authorization then
         return unauthorized()
     end
 
-    local K = srp_store:get_K(phone)
+    local match = ngx.re.match(authorization, "SRP (.*)")
+    if not match or not match[1] then
+        ngx.log(ngx.INFO, "not auth with invalid authorization,uid=", uid, "authorization=", authorization)
+        return unauthorized()
+    end
+
+    local K = srp_store:get_K(uid)
     if not K then
+        ngx.log(ngx.INFO, "not auth with no K,uid=", uid)
         return unauthorized()
     end
 
-    K = string.sub(K, 1, 32)
+    ngx.log(ngx.DEBUG, "uid=" .. uid, ",K=", K)
+    K = string.sub(utils:from_hex(K), 1, 32)
     local iv = utils:from_hex("bfd3814678afe0036efa67ca8da44e2e")
     local aes_256_cbc_with_iv = aes:new(K, nil, aes.cipher(256, "cbc"), {iv = iv})
-    local decrypt = aes_256_cbc_with_iv:decrypt(authentication)
-    if decrypt then
-        decrypt = cjson.decode(decrypt)
-    end
+    local decrypt = aes_256_cbc_with_iv:decrypt(ngx.decode_base64(match[1]))
+    ngx.log(ngx.DEBUG, "uid=" .. uid, ",decrypt=", decrypt)
+    local token = decrypt and cjson.decode(decrypt) or nil
 
-    local now = ngx.time()
-    if not decrypt or not decrypt.I or decrypt.I ~= phone
-        or not type(decrypt.t) == "number" or math.abs(decrypt.t - now) > 15
-        or not type(decrypt.clt) == "table" or not decrypt.clt.p or not decrypt.clt.v
-        or not type(decrypt.r) == "number" then
+    --local now = math.floor(ngx.now() * 1000)
+    if not token or not token.I or token.I ~= uid
+        --or not type(token.t) == "number" or math.abs(token.t - now) > 15000
+        or not type(token.clt) == "table" or not token.clt.p or not token.clt.v
+        or not type(token.q) == "number" or not type(token.r) == "number" then
+        ngx.log(ngx.INFO, "not auth with invalid token=", token)
         return unauthorized()
     end
 
-    return restful:wrap(decrypt)
+    return restful:wrap(token)
 end
 
 restful:say(run())
