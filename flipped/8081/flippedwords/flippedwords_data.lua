@@ -11,7 +11,7 @@ local mysql_conf = {
 local mysql = cmysql:new(mysql_conf)
 local GEOHASH_LENGTH = 5
 local quote_sql_str = ngx.quote_sql_str
-local flippedwords_field = "id,to,contents,lat,lng"
+local flippedwords_field = "id,sendto,contents,lat,lng"
 
 local _M = {}
 
@@ -21,8 +21,8 @@ function _M:add_flippedwords(body)
         geohash = iwi.encode(body.lat, body.lng, GEOHASH_LENGTH)
     end
 
-    local sql = string.format("insert into dbFlipped.Flipped set contents=%s,to=%d,lat=%,lng=%d,geohash=%s",
-        quote_sql_str(cjson.encode(body.contents)), body.to, body.lat or 0, body.lng or 0, quote_sql_str(geohash))
+    local sql = string.format("insert into dbFlipped.Flipped set contents=%s,sendto=%d,lat=%,lng=%d,geohash=%s",
+        quote_sql_str(cjson.encode(body.contents)), body.sendto, body.lat or 0, body.lng or 0, quote_sql_str(geohash))
     local res, err = mysql:execute(sql)
     if err then
         return nil, err
@@ -87,7 +87,7 @@ end
 
 function _M:my_flippedwords(uid, id)
     id = id or 0
-    local sql = string.format("select %s from dbFlipped.Flipped where id>%d and to=%s order by id asc limit 100",
+    local sql = string.format("select %s from dbFlipped.Flipped where id>%d and sendto=%s order by id asc limit 100",
         flippedwords_field, id, quote_sql_str(uid))
     local res, err = mysql:query(sql)
     if err then
