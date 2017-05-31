@@ -26,7 +26,7 @@ local function get_phone()
         return nil
     end
 
-    local valid = ngx.re.match(phone, "1[3-8]\\d{9}")
+    local valid = ngx.re.match(phone, "1\\d{10}")
     if not valid then
         return nil
     end
