@@ -24,10 +24,6 @@ local function arrange_flippedwords(res)
         if elem.id then
             elem.id = tonumber(elem.id)
         end
-
-        if elem.sendto then
-            elem.sendto = tonumber(elem.sendto)
-        end
     end
 
     return res

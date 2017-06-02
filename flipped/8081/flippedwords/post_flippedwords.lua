@@ -5,6 +5,7 @@ local _M = {}
 
 function _M:run()
     local body = restful:get_body_data()
+    body.sendto = tonumber(body.sendto)
     if not body or type(body.sendto) ~= "number" or type(body.contents) ~= "table" then
         return restful:unprocessable_entity()
     end
