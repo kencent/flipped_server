@@ -116,6 +116,8 @@ function _M:my_flippedwords(uid, id)
         return nil, err
     end
 
+    sql = string.format("delete from dbFlipped.Flipped where id<=%d and sendto=%d", id, uid)
+    mysql:execute(sql)
     return arrange_flippedwords(res)
 end
 
