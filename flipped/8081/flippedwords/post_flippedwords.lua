@@ -15,7 +15,12 @@ function _M:run()
         return restful:unprocessable_entity()
     end
 
+    body.sendfrom = ngx.var.http_x_uid
     local res, err = flippedwords_data:add_flippedwords(body);
+    if err and err == "no affected" then
+        return restful:too_many_requests("今天已经发过了，请明天再来！")
+    end
+
     if err then
         return restful:internal_server_error()
     end

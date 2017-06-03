@@ -16,7 +16,7 @@ function _M:run()
     if type(res) == "table" and #res > 0 then
         restful:add_hypermedia(ret, "next", "/nearby_flippedwords?" .. ngx.encode_args({lat = args.lat, lng = args.lng, id = res[#res].id}))
         for _, elem in ipairs(res) do
-            elem.sendto = "1XXXXXXXXX" .. string.sub(elem.sendto, -1)
+            elem.sendto = "1X" .. string.sub(elem.sendto, 3, 3) .. "XXXXXXX" .. string.sub(elem.sendto, -1)
         end
     end
 
