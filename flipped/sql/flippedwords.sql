@@ -2,6 +2,7 @@ create table if not exists dbFlipped.Flipped
 (
     ID              int unsigned    not null AUTO_INCREMENT,
     SendTo          bigint          not null default 0,
+    CTime 			bigint 			not null default 0,
     Contents        varchar(4096)   not null default '',
     Lat             double          not null default 0,
     Lng             double          not null default 0,

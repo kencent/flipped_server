@@ -11,7 +11,7 @@ local mysql_conf = {
 local mysql = cmysql:new(mysql_conf)
 local GEOHASH_LENGTH = 5
 local quote_sql_str = ngx.quote_sql_str
-local flippedwords_field = "id,sendto,contents,lat,lng"
+local flippedwords_field = "id,sendto,ctime,contents,lat,lng"
 
 local _M = {}
 
@@ -24,6 +24,10 @@ local function arrange_flippedwords(res)
         if elem.id then
             elem.id = tonumber(elem.id)
         end
+
+        if elem.ctime then
+            elem.ctime = tonumber(elem.ctime)
+        end
     end
 
     return res
@@ -35,8 +39,8 @@ function _M:add_flippedwords(body)
         geohash = iwi.encode(body.lat, body.lng, GEOHASH_LENGTH)
     end
 
-    local sql = string.format("insert into dbFlipped.Flipped set contents=%s,sendto=%d,lat=%f,lng=%f,geohash=%s",
-        quote_sql_str(cjson.encode(body.contents)), body.sendto, body.lat or 0, body.lng or 0, quote_sql_str(geohash))
+    local sql = string.format("insert into dbFlipped.Flipped set contents=%s,sendto=%d,ctime=%d,lat=%f,lng=%f,geohash=%s",
+        quote_sql_str(cjson.encode(body.contents)), body.sendto, ngx.time(), body.lat or 0, body.lng or 0, quote_sql_str(geohash))
     local res, err = mysql:execute(sql)
     if err then
         return nil, err
