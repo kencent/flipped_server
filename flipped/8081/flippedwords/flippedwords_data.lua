@@ -45,7 +45,8 @@ function _M:get_flippedword(id)
         return nil, err
     end
 
-    return arrange_flippedwords({res})
+    arrange_flippedwords({res})
+    return res
 end
 
 function _M:add_flippedwords(body)
