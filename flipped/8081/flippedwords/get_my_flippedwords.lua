@@ -12,6 +12,9 @@ function _M:run()
     local ret = {flippedwords = res or {}}
     if type(res) == "table" and #res > 0 then
         restful:add_hypermedia(ret, "previous", "/my_flippedwords?" .. ngx.encode_args({id = res[#res].id}))
+        for _, elem in ipairs(res) do
+        	restful:add_hypermedia(elem, "detail", "/flippedwords/" .. elem.id)
+        end
     end
 
     return restful:wrap(ret)

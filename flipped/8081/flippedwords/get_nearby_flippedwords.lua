@@ -14,9 +14,10 @@ function _M:run()
     local ret = {flippedwords = res or {}}
     restful:add_hypermedia(ret, "previous", "/nearby_flippedwords?" .. ngx.encode_args({lat = args.lat, lng = args.lng}))
     if type(res) == "table" and #res > 0 then
-        restful:add_hypermedia(ret, "next", "/nearby_flippedwords?" .. ngx.encode_args({lat = args.lat, lng = args.lng, id = res[#res].id}))
+        --restful:add_hypermedia(ret, "next", "/nearby_flippedwords?" .. ngx.encode_args({lat = args.lat, lng = args.lng, id = res[#res].id}))
         for _, elem in ipairs(res) do
-            elem.sendto = "1X" .. string.sub(elem.sendto, 3, 3) .. "XXXXXXX" .. string.sub(elem.sendto, -1)
+            elem.sendto = "1" .. string.sub(elem.sendto, 2, 3) .. "******" .. string.sub(elem.sendto, -2)
+            restful:add_hypermedia(elem, "detail", "/flippedwords/" .. elem.id)
         end
     end
 

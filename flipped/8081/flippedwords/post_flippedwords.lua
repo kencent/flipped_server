@@ -15,7 +15,7 @@ function _M:run()
         return restful:unprocessable_entity()
     end
 
-    body.sendfrom = ngx.var.http_x_uid
+    body.uid = ngx.var.http_x_uid
     local res, err = flippedwords_data:add_flippedwords(body);
     if err and err == "no affected" then
         return restful:too_many_requests("今天已经发过了，请明天再来！")
@@ -25,7 +25,9 @@ function _M:run()
         return restful:internal_server_error()
     end
 
-    return restful:wrap({id = res.id})
+    local ret = {id = res.id}
+    restful:add_hypermedia(ret, "detail", "/flippedwords/" .. res.id)
+    return restful:wrap(ret)
 end
 
 
