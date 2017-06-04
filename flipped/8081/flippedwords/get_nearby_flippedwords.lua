@@ -8,7 +8,7 @@ function _M:run()
 
     local res, err = flippedwords_data:nearby_flippedwords(args);
     if err then
-        return restful:internal_server_error()
+        return restful:internal_server_error("系统繁忙")
     end
 
     local ret = {flippedwords = res or {}}

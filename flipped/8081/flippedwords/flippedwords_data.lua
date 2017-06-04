@@ -13,11 +13,12 @@ local mysql = cmysql:new(mysql_conf)
 local GEOHASH_LENGTH = 5
 local quote_sql_str = ngx.quote_sql_str
 local flippedwords_field = "id,sendto,ctime,contents,lat,lng"
-local STATUS_NEW = 0
-local STATUS_ISSUED = 100
---local STATUS_READED = 200
 
-local _M = {}
+local _M = {
+    STATUS_NEW = 0,
+    STATUS_ISSUED = 100,
+    STATUS_READ = 200,
+}
 
 local function arrange_flippedwords(res)
     if type(res) ~= "table" then
@@ -53,7 +54,7 @@ function _M:add_flippedwords(body)
     local now = math.floor(ngx.now() * 1000)
     local day_first_milliseconds = utils:get_day_begin(math.floor(now / 1000)) * 1000
     -- 一天只能发一次
-    local sql = string.format("select %s from dbFlipped.Flipped where uid=%s and ctime>%d",
+    local sql = string.format("select %s from dbFlipped.Flipped where uid=%s and ctime>%d limit 1",
         flippedwords_field, quote_sql_str(body.uid), day_first_milliseconds)
     local res, err = mysql:query(sql)
     if err then
@@ -70,7 +71,7 @@ function _M:add_flippedwords(body)
     end
 
     sql = string.format("insert into dbFlipped.Flipped set contents=%s,uid=%d,sendto=%d,ctime=%d,lat=%f,lng=%f,geohash=%s,status=%d,statusupdatetime=%d",
-        quote_sql_str(cjson.encode(body.contents)), body.uid, body.sendto, now, body.lat or 0, body.lng or 0, quote_sql_str(geohash), STATUS_NEW, now)
+        quote_sql_str(cjson.encode(body.contents)), body.uid, body.sendto, now, body.lat or 0, body.lng or 0, quote_sql_str(geohash), _M.STATUS_NEW, now)
     res, err = mysql:execute(sql)
     if err then
         return nil, err
@@ -96,7 +97,7 @@ function _M:nearby_flippedwords(args)
         end
 
         local sql = string.format("select id,lat,lng from dbFlipped.Flipped where geohash in (%s) and status=%d",
-            table.concat(geohashs, ","), STATUS_NEW)
+            table.concat(geohashs, ","), _M.STATUS_NEW)
         local res, err = mysql:query(sql)
         if err then
             return nil, err 
@@ -153,7 +154,7 @@ function _M:nearby_flippedwords(args)
     -- 用户未授权位置或附近的不够，拿最新的补充
     if #ret < page then
         local sql = string.format("select %s from dbFlipped.Flipped where status=%d order by id desc limit %d",
-            flippedwords_field, STATUS_NEW, page)
+            flippedwords_field, _M.STATUS_NEW, page)
         local res, err = mysql:query(sql)
         if err then
             return nil, err
@@ -179,19 +180,60 @@ end
 
 function _M:my_flippedwords(uid, id)
     id = id or 0
-    local sql = string.format("select %s from dbFlipped.Flipped where id>%d and sendto=%d order by id asc limit 500",
-        flippedwords_field, id, uid)
-    ngx.log(ngx.DEBUG, "sql=", sql)
+    local sql = string.format("select %s from dbFlipped.Flipped where sendto=%d and id>%d order by id asc limit 200",
+        flippedwords_field, uid, id)
     local res, err = mysql:query(sql)
     if err then
         return nil, err
     end
 
-    local now = math.floor(ngx.now() * 1000)
-    sql = string.format("update dbFlipped.Flipped set status=%d,statusupdatetime=%d where sendto=%d and id<=%d", 
-        STATUS_ISSUED, now, uid, id)
-    mysql:execute(sql)
+    if id > 0 then
+        local now = math.floor(ngx.now() * 1000)
+        sql = string.format("update dbFlipped.Flipped set status=%d,statusupdatetime=%d where sendto=%d and id<=%d", 
+            _M.STATUS_ISSUED, now, uid, id)
+        mysql:execute(sql)
+    end
+    
     return arrange_flippedwords(res)
+end
+
+function _M:mypub_flippedwords(uid, id)
+    id = id or 4300000000
+    local sql = string.format("select %s from dbFlipped.Flipped where uid=%d and id<%d order by id asc limit 30",
+        flippedwords_field, uid, id)
+    local res, err = mysql:query(sql)
+    if err then
+        return nil, err
+    end
+
+    return arrange_flippedwords(res)
+end
+
+
+function _M:read_flippedwords(uid, last_open_time)
+    last_open_time = last_open_time or 0
+    local mintime = math.floor(ngx.now() * 1000) - 30 * 86400 * 1000
+    if last_open_time < mintime then
+        last_open_time = mintime
+    end
+
+    local sql = string.format("select %s from dbFlipped.Flipped where uid=%d and status=%d and statusupdatetime>%d order by id asc",
+        flippedwords_field, uid, uid, _M.STATUS_READ, last_open_time)
+    local res, err = mysql:query(sql)
+    if err then
+        return nil, err
+    end
+
+    return arrange_flippedwords(res)
+end
+
+
+function _M:flippedwords_read(id)
+    local now = math.floor(ngx.now() * 1000)
+    local sql = string.format("update dbFlipped.Flipped set status=%d,statusupdatetime=%d where id=%d", 
+        _M.STATUS_READ, now, id)
+    local _, err = mysql:execute(sql)
+    return err
 end
 
 return _M

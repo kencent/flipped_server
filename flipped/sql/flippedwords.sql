@@ -12,7 +12,10 @@ create table if not exists dbFlipped.Flipped
     StatusUpdateTime    bigint          not null default 0,
     primary key(ID),
     index(SendTo, ID),
-    index(STATUS, GeoHash, ID)
+    index(Uid, ID),
+    index(Uid, CTime),
+    index(Uid, Status, StatusUpdateTime)
+    index(Status, GeoHash)
 )ENGINE=InnoDB AUTO_INCREMENT=1000000 DEFAULT CHARSET=latin1;
 
 create table if not exists dbFlipped.FeedBacks

@@ -9,14 +9,15 @@ function _M:run()
         return restful:unprocessable_entity()
     end
 
-    local res, err = flippedwords_data:my_flippedwords(uid, ngx.var.arg_id);
+    local res, err = flippedwords_data:mypub_flippedwords(uid, ngx.var.arg_id);
     if err then
         return restful:internal_server_error("系统繁忙")
     end
 
     local ret = {flippedwords = res or {}}
+    restful:add_hypermedia(ret, "previous", "/mypub_flippedwords")
     if type(res) == "table" and #res > 0 then
-        restful:add_hypermedia(ret, "previous", "/my_flippedwords?" .. ngx.encode_args({id = res[#res].id}))
+        restful:add_hypermedia(ret, "next", "/mypub_flippedwords?id=" .. res[#res].id)
         for _, elem in ipairs(res) do
         	restful:add_hypermedia(elem, "detail", "/flippedwords/" .. elem.id)
         end
