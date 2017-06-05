@@ -155,7 +155,7 @@ local function get_password(phone)
     end
 
     return restful:ok({s = s, N_num_bits = srp_store.N_num_bits,
-        countdown = countdown, validtime = srp_store.validtime, password = password}, now + countdown)
+        countdown = countdown, validtime = srp_store.validtime}, now + countdown)
 end
 
 local function get_B(phone)

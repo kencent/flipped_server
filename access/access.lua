@@ -19,11 +19,10 @@ if res.status ~= ngx.HTTP_OK then
 end
 
 local body = cjson.decode(res.body)
---local now = math.floor(ngx.now() * 1000)
 if not body or not body.I or body.I ~= uid
-    --or not type(body.t) == "number" or math.abs(body.t - now) > 15000
+    or not type(body.t) == "number"
     or not type(body.clt) == "table" or not body.clt.p or not body.clt.v
-    or not type(body.q) == "number" or not type(body.r) == "number" then
+    or not type(body.q) == "number" then
 	ngx.log(ngx.INFO, "exit with invalid body=", res.body)
     ngx.exit(ngx.HTTP_UNAUTHORIZED)
     return
