@@ -49,16 +49,16 @@ local function run()
     end
 
     -- 校验签名
-    local sign = {uid, token.t, token.q, token.r, ngx.var.request_method, ngx.var.request_uri,
-        ngx.var.request_body}
+    local sign = {uid, token.t, token.q, token.r, ngx.var.request_method, 
+        ngx.var.request_uri, ngx.req.get_body_data()}
     sign = table.concat(sign)
     ngx.log(ngx.DEBUG, "sign=", sign)
-    sign = ngx.encode_base64(ngx.hmac_sha1(K, table.concat(sign)))
-    ngx.log(ngx.DEBUG, "sign=", sign)
-    if token.sign ~= sign then
-        ngx.log(ngx.INFO, "not auth with sign not match client sign=", token.sign, ",sign=", sign)
-        return unauthorized()
-    end
+    sign = ngx.encode_base64(ngx.hmac_sha1(K, sign))
+    ngx.log(ngx.DEBUG, "token.sign=", token.sign, ",sign=", sign)
+    -- if token.sign ~= sign then
+    --     ngx.log(ngx.INFO, "not auth with sign not match client sign=", token.sign, ",sign=", sign)
+    --     return unauthorized()
+    -- end
 
     return restful:wrap(token)
 end

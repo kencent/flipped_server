@@ -1,4 +1,5 @@
-local cjson = require("cjson.safe")
+--local cjson = require("cjson.safe")
+local location = require("resty.location")
 
 local authorization = ngx.var.http_authorization
 local uid = ngx.var.http_x_uid
@@ -7,18 +8,13 @@ if not authorization or not uid then
     return
 end
 
-local res = ngx.location.capture("/auth")
+local authsvc = location:new("/auth")
+local res = authsvc:proxy()
 if res.status == ngx.HTTP_UNAUTHORIZED then
 	ngx.header["WWW-Authenticate"] = res.header["WWW-Authenticate"]
-end
+end 
 
-if res.status ~= ngx.HTTP_OK then
-	ngx.log(ngx.INFO, "exit with status=", res.status)
-	ngx.exit(res.status)
-    return
-end
-
-local body = cjson.decode(res.body)
+local body = res.body
 if not body or not body.I or body.I ~= uid
     or not type(body.t) == "number"
     or not type(body.clt) == "table" or not body.clt.p or not body.clt.v
@@ -28,6 +24,8 @@ if not body or not body.I or body.I ~= uid
     return
 end
 
+ngx.req.set_header("x-seq", body.q)
+ngx.req.set_header("x-ts", body.t)
 ngx.req.set_header("x-platform", body.clt.p)
 ngx.req.set_header("x-version", body.clt.v)
 ngx.exit(ngx.OK)
