@@ -25,9 +25,8 @@ function _M:run()
         return restful:internal_server_error("系统繁忙")
     end
 
-    local ret = {id = res.id}
-    restful:add_hypermedia(ret, "detail", "/flippedwords/" .. res.id)
-    return restful:wrap(ret)
+    restful:add_hypermedia(res, "detail", "/flippedwords/" .. res.id)
+    return restful:wrap(res)
 end
 
 

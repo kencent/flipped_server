@@ -58,7 +58,7 @@ local function send_password(phone, password)
                     mobile = tostring(phone),
                 },
                 type = 0,
-                msg = "【小情绪】您的登录验证码是" .. password .. "，请于" .. math.floor(password_validtime / 60) .. "分钟内填写。如非本人操作，请忽略本短信。",
+                msg = "【科马斯】您的登录验证码是" .. password .. "，请于" .. math.floor(password_validtime / 60) .. "分钟内填写。如非本人操作，请忽略本短信。",
                 sig = sig,
                 time = time
             }),
@@ -154,7 +154,7 @@ local function get_password(phone)
         ngx.log(ngx.ERR, "failed to set sms freq,phone=", phone, ",err=", err)
     end
 
-    return restful:ok({s = s, N_num_bits = srp_store.N_num_bits,
+    return restful:ok({s = s, N_num_bits = srp_store.N_num_bits, password = password,
         countdown = countdown, validtime = srp_store.validtime}, now + countdown)
 end
 

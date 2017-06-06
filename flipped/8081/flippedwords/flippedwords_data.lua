@@ -77,7 +77,18 @@ function _M:add_flippedwords(body)
         return nil, err
     end
 
-    return {id = tonumber(res.insert_id)}
+    local id = res.insert_id
+    local is_sendto_day_first = false
+
+    -- 接收人是不是当天第一次收到
+    sql = string.format("select %s from dbFlipped.Flipped where sendto=%d and ctime>=%d limit 2",
+        flippedwords_field, body.sendto, day_first_milliseconds)
+    res = mysql:query(sql)
+    if res and #res == 1 then
+        is_sendto_day_first = true
+    end
+
+    return {id = id, ctime = now, sendto = body.sendto, is_sendto_day_first = is_sendto_day_first}
 end
 
 function _M:nearby_flippedwords(args)

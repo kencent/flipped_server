@@ -24,6 +24,7 @@ if not body or not body.I or body.I ~= uid
     return
 end
 
+ngx.req.clear_header("Authorization")
 ngx.req.set_header("x-seq", body.q)
 ngx.req.set_header("x-ts", body.t)
 ngx.req.set_header("x-platform", body.clt.p)
